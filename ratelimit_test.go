@@ -394,3 +394,12 @@ func BenchmarkNewBucket(b *testing.B) {
 		NewBucketWithRate(4e18, 1<<62)
 	}
 }
+
+func BenchmarkWaitParallel(b *testing.B) {
+	tb := NewBucket(1, 16*1024)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			tb.Take(1)
+		}
+	})
+}

@@ -195,8 +195,8 @@ const infinityDuration time.Duration = 0x7fffffffffffffff
 // tokens to the bucket once this method commits us to taking them.
 func (tb *Bucket) Take(count int64) time.Duration {
 	tb.mu.Lock()
-	defer tb.mu.Unlock()
 	d, _ := tb.take(tb.clock.Now(), count, infinityDuration)
+	tb.mu.Unlock()
 	return d
 }
 
@@ -211,8 +211,9 @@ func (tb *Bucket) Take(count int64) time.Duration {
 // true.
 func (tb *Bucket) TakeMaxDuration(count int64, maxWait time.Duration) (time.Duration, bool) {
 	tb.mu.Lock()
-	defer tb.mu.Unlock()
-	return tb.take(tb.clock.Now(), count, maxWait)
+	d, ok := tb.take(tb.clock.Now(), count, maxWait)
+	tb.mu.Unlock()
+	return d, ok
 }
 
 // TakeAvailable takes up to count immediately available tokens from the
@@ -220,8 +221,9 @@ func (tb *Bucket) TakeMaxDuration(count int64, maxWait time.Duration) (time.Dura
 // no available tokens. It does not block.
 func (tb *Bucket) TakeAvailable(count int64) int64 {
 	tb.mu.Lock()
-	defer tb.mu.Unlock()
-	return tb.takeAvailable(tb.clock.Now(), count)
+	n := tb.takeAvailable(tb.clock.Now(), count)
+	tb.mu.Unlock()
+	return n
 }
 
 // takeAvailable is the internal version of TakeAvailable - it takes the
@@ -255,9 +257,10 @@ func (tb *Bucket) Available() int64 {
 // an argument to enable easy testing.
 func (tb *Bucket) available(now time.Time) int64 {
 	tb.mu.Lock()
-	defer tb.mu.Unlock()
 	tb.adjustavailableTokens(tb.currentTick(now))
-	return tb.availableTokens
+	avail := tb.availableTokens
+	tb.mu.Unlock()
+	return avail
 }
 
 // Capacity returns the capacity that the bucket was created with.
