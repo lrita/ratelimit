@@ -344,7 +344,7 @@ func checkRate(c *gc.C, rate float64) {
 	}
 }
 
-func (rateLimitSuite) NewBucketWithRate(c *gc.C) {
+func (rateLimitSuite) TestNewBucketWithRate(c *gc.C) {
 	for rate := float64(1); rate < 1e6; rate += 7 {
 		checkRate(c, rate)
 	}
@@ -368,6 +368,10 @@ func (rateLimitSuite) NewBucketWithRate(c *gc.C) {
 func TestAvailable(t *testing.T) {
 	for i, tt := range availTests {
 		tb := NewBucket(tt.fillInterval, tt.capacity)
+		if tb.Capacity() != tt.capacity {
+			t.Fatalf("#%d: %s, take = %d, want = %d",
+				i, tt.about, tb.Capacity(), tt.capacity)
+		}
 		if c := tb.takeAvailable(tb.startTime, tt.take); c != tt.take {
 			t.Fatalf("#%d: %s, take = %d, want = %d", i, tt.about, c, tt.take)
 		}
