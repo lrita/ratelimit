@@ -9,7 +9,6 @@ package ratelimit
 
 import (
 	"math"
-	"strconv"
 	"sync"
 	"time"
 	_ "unsafe" // for go:linkname
@@ -48,6 +47,7 @@ type Bucket struct {
 	startTime int64
 
 	// capacity holds the overall capacity of the bucket.
+	// This represents the max rate spike/burst.
 	capacity int64
 
 	// quantum holds how many tokens are added on
@@ -92,27 +92,37 @@ func NewBucketWithRate(rate float64, capacity int64) *Bucket {
 	// Use the same bucket each time through the loop
 	// to save allocations.
 	tb := NewBucketWithQuantum(1, capacity, 1)
-	for quantum := int64(1); quantum < 1<<50; quantum = nextQuantum(quantum) {
-		fillInterval := time.Duration(1e9 * float64(quantum) / rate)
-		if fillInterval <= 0 {
-			continue
-		}
-		tb.fillInterval = fillInterval
-		tb.quantum = quantum
-		if diff := math.Abs(tb.Rate() - rate); diff/rate <= rateMargin {
-			return tb
-		}
+	tb.fillInterval, tb.quantum = calcQuantum(rate)
+	if tb.capacity < tb.quantum {
+		tb.capacity = tb.quantum
 	}
-	panic("cannot find suitable quantum for " + strconv.FormatFloat(rate, 'g', -1, 64))
+	return tb
+}
+
+func calcQuantum(rate float64) (fillInterval time.Duration, quantum int64) {
+	margin := 1.1
+	for {
+		for quantum = int64(1); quantum < 1<<50; quantum = nextQuantum(quantum, margin) {
+			fillInterval = time.Duration(1e9 * float64(quantum) / rate)
+			if fillInterval <= 0 {
+				continue
+			}
+			r0 := 1e9 * float64(quantum) / float64(fillInterval)
+			if diff := math.Abs(r0 - rate); diff/rate <= rateMargin {
+				return
+			}
+		}
+		margin = 1.0 + margin*0.9
+	}
 }
 
 // nextQuantum returns the next quantum to try after q.
 // We grow the quantum exponentially, but slowly, so we
 // get a good fit in the lower numbers.
-func nextQuantum(q int64) int64 {
-	q1 := q * 11 / 10
-	if q1 == q {
-		q1++
+func nextQuantum(q int64, m float64) int64 {
+	q1 := int64(float64(q) * m)
+	if q1 <= q {
+		q1 = q + 1
 	}
 	return q1
 }
@@ -130,6 +140,9 @@ func NewBucketWithQuantum(fillInterval time.Duration, capacity, quantum int64) *
 	if quantum <= 0 {
 		panic("token bucket quantum is not > 0")
 	}
+	if capacity < quantum {
+		panic("token capacity need large than quantum")
+	}
 	return &Bucket{
 		startTime:       nanotime(),
 		latestTick:      0,
@@ -137,6 +150,18 @@ func NewBucketWithQuantum(fillInterval time.Duration, capacity, quantum int64) *
 		capacity:        capacity,
 		quantum:         quantum,
 		availableTokens: capacity,
+	}
+}
+
+// ResetRate reset current rate limit and capacity.
+func (tb *Bucket) ResetRate(rate float64, capacity int64) {
+	tb.mu.Lock()
+	defer tb.mu.Unlock()
+	tb.latestTick = 0
+	tb.capacity = capacity
+	tb.fillInterval, tb.quantum = calcQuantum(rate)
+	if tb.capacity < tb.quantum {
+		tb.capacity = tb.quantum
 	}
 }
 

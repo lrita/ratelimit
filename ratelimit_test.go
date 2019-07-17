@@ -302,6 +302,17 @@ func (rateLimitSuite) TestPanics(c *gc.C) {
 	c.Assert(func() { NewBucket(-2, 1) }, gc.PanicMatches, "token bucket fill interval is not > 0")
 	c.Assert(func() { NewBucket(1, 0) }, gc.PanicMatches, "token bucket capacity is not > 0")
 	c.Assert(func() { NewBucket(1, -2) }, gc.PanicMatches, "token bucket capacity is not > 0")
+	c.Assert(func() { NewBucketWithQuantum(1, 1, 2) }, gc.PanicMatches, "token capacity need large than quantum")
+}
+
+func (rateLimitSuite) TestAvailable(c *gc.C) {
+	tb := NewBucketWithQuantum(time.Hour, 2, 2)
+	c.Assert(tb.Available(), gc.Equals, int64(2))
+	tb.Take(1)
+	c.Assert(tb.Available(), gc.Equals, int64(1))
+	c.Assert(tb.TakeAvailable(1), gc.Equals, int64(1))
+	c.Assert(tb.Available(), gc.Equals, int64(0))
+	c.Assert(tb.WaitMaxDuration(1, time.Millisecond), gc.Equals, false)
 }
 
 func isCloseTo(x, y, tolerance float64) bool {
@@ -317,9 +328,31 @@ func (rateLimitSuite) TestRate(c *gc.C) {
 	if !isCloseTo(tb.Rate(), 0.5, 0.00001) {
 		c.Fatalf("got %v want 0.5", tb.Rate())
 	}
-	tb = NewBucketWithQuantum(100*time.Millisecond, 1, 5)
+	tb = NewBucketWithQuantum(100*time.Millisecond, 5, 5)
 	if !isCloseTo(tb.Rate(), 50, 0.00001) {
 		c.Fatalf("got %v want 50", tb.Rate())
+	}
+	tb.ResetRate(500.0, 50)
+	if !isCloseTo(tb.Rate(), 500.0, 0.00001) {
+		c.Fatalf("got %v want 500", tb.Rate())
+	}
+}
+
+func (rateLimitSuite) TestResetRate(c *gc.C) {
+	tb := NewBucketWithRate(500.0, 50)
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		tb.ResetRate(1000.0, 100)
+	}()
+	count := 0
+	begin := time.Now()
+	for time.Since(begin) < time.Second {
+		if tb.WaitMaxDuration(1, time.Millisecond) {
+			count++
+		}
+	}
+	if count < 600 {
+		c.Fatalf("got %v want > 550", count)
 	}
 }
 
