@@ -157,9 +157,9 @@ func NewBucketWithQuantum(fillInterval time.Duration, capacity, quantum int64) *
 func (tb *Bucket) ResetRate(rate float64, capacity int64) {
 	tb.mu.Lock()
 	defer tb.mu.Unlock()
-	tb.latestTick = 0
 	tb.capacity = capacity
 	tb.fillInterval, tb.quantum = calcQuantum(rate)
+	tb.latestTick = tb.currentTick(nanotime())
 	if tb.capacity < tb.quantum {
 		tb.capacity = tb.quantum
 	}
