@@ -449,3 +449,10 @@ func BenchmarkTakeAvailableParallel(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkResetRate(b *testing.B) {
+	tb := NewBucketWithRate(500.0, 500)
+	for i := 0; i < b.N; i++ {
+		tb.ResetRate(float64(i+1), int64(i+1))
+	}
+}
